@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Custom Xray</title>
+<title>Custom Xray — ConfigBuilder</title>
 <style>
   :root{
     --bg:#0f1115; --card:#171a21; --line:#262b36; --txt:#e8eaf0; --sub:#8b93a7;
@@ -38,36 +38,56 @@
   .count{font-size:12px;color:var(--sub);margin-bottom:8px}
   .edit-area{width:100%;font-family:monospace;font-size:12px;background:#050608;border:1px solid var(--accent);border-radius:6px;padding:8px;color:var(--txt);margin-top:8px}
   h3{font-size:14px;margin:0 0 10px;color:var(--txt)}
+  .config-info{background:#0c0e13;border:1px solid var(--line);border-radius:8px;padding:10px;font-size:12px;color:var(--sub);margin-bottom:10px}
+  .config-info strong{color:var(--accent2)}
 </style>
 </head>
 <body>
 
-<h1>⚡ Custom Xray</h1>
-<div class="sub">Config manager — GitHub-backed spinner para sa V2ray / Xray configs</div>
+<h1>⚡ Custom Xray — ConfigBuilder</h1>
+<div class="sub">GitHub-backed config manager na may ConfigBuilder + AppsConfigUtil</div>
 
 <div class="card">
-  <h3>1. GitHub Setup</h3>
+  <h3>1. ConfigBuilder Setup (Default: noelrubio143/v2)</h3>
+  <div class="config-info">
+    <strong>Default Repo:</strong> <span id="defaultRepo">noelrubio143/v2</span> | 
+    <strong>File:</strong> <span id="defaultFile">configs.txt</span>
+  </div>
   <label>Personal Access Token</label>
   <input id="token" type="password" placeholder="ghp_xxxxxxxxxxxxxxxx">
-  <label>Repo (owner/repo)</label>
-  <input id="repo" type="text" placeholder="username/my-configs">
+  <label>Repo Owner</label>
+  <input id="repoOwner" type="text" placeholder="noelrubio143" value="noelrubio143">
+  <label>Repo Name</label>
+  <input id="repoName" type="text" placeholder="v2" value="v2">
   <label>File name / path</label>
-  <input id="filepath" type="text" placeholder="configs.txt">
+  <input id="filepath" type="text" placeholder="configs.txt" value="configs.txt">
   <div class="row">
     <button class="btn-main" onclick="loadConfigs()">🔄 Load from GitHub</button>
     <button class="btn-green" onclick="saveConfigs()">💾 Save to GitHub</button>
+    <button class="btn-flat btn-sm" onclick="syncAppsConfig()">🔗 Sync Config</button>
   </div>
-  <div id="status">Wala pang loaded. Ilagay ang token, repo, at file, tapos Load.</div>
+  <div id="status">Wala pang loaded. I-setup ang ConfigBuilder, tapos Load.</div>
 </div>
 
 <div class="card">
-  <h3>2. Spinner (Configs)</h3>
+  <h3>2. Apps Config Util (Naka-sync sa ConfigBuilder)</h3>
+  <div class="config-info">
+    <strong>Repo Path:</strong> <span id="appsRepoPath">—</span><br>
+    <strong>Token Set:</strong> <span id="appsTokenSet">No</span><br>
+    <strong>Selected Config:</strong> <span id="appsSelectedConfig">—</span>
+  </div>
+  <button class="btn-flat" onclick="showAppsConfig()">📋 View Apps Config</button>
+  <button class="btn-flat" onclick="resetAppsConfig()">🔄 Reset to Defaults</button>
+</div>
+
+<div class="card">
+  <h3>3. Spinner (Configs)</h3>
   <div class="count" id="count">0 configs</div>
   <div id="list"><div class="empty">Wala pang laman.</div></div>
 </div>
 
 <div class="card">
-  <h3>3. Paste Config</h3>
+  <h3>4. Paste Config</h3>
   <label>Paste dito (1 config per line — vmess/vless/trojan/ss)</label>
   <textarea id="pasteBox" placeholder="vless://...&#10;vmess://...&#10;trojan://..."></textarea>
   <div class="row">
@@ -79,6 +99,12 @@
 <script>
 let configs = [];   // array of strings
 let fileSha = null;
+let appsConfig = {
+  repo: 'noelrubio143/v2',
+  file: 'configs.txt',
+  token_set: false,
+  selected_config: ''
+};
 
 function setStatus(msg, type){
   const el = document.getElementById('status');
@@ -114,8 +140,57 @@ function ghHeaders(){
   };
 }
 
+function getFullRepo(){
+  const owner = document.getElementById('repoOwner').value.trim();
+  const repo = document.getElementById('repoName').value.trim();
+  return owner + '/' + repo;
+}
+
+function syncAppsConfig(){
+  const fullRepo = getFullRepo();
+  const filepath = document.getElementById('filepath').value.trim();
+  const token = document.getElementById('token').value.trim();
+  
+  appsConfig.repo = fullRepo;
+  appsConfig.file = filepath;
+  appsConfig.token_set = token.length > 0;
+  
+  // Sync to local storage (para sa persistence)
+  localStorage.setItem('appsConfig', JSON.stringify(appsConfig));
+  
+  setStatus('✓ Apps config synced successfully!', 'ok');
+  updateAppsConfigDisplay();
+}
+
+function updateAppsConfigDisplay(){
+  document.getElementById('appsRepoPath').textContent = appsConfig.repo;
+  document.getElementById('appsTokenSet').textContent = appsConfig.token_set ? 'Yes' : 'No';
+  document.getElementById('appsSelectedConfig').textContent = appsConfig.selected_config || '—';
+}
+
+function showAppsConfig(){
+  const config = JSON.stringify(appsConfig, null, 2);
+  alert('Apps Config:\n\n' + config);
+}
+
+function resetAppsConfig(){
+  appsConfig = {
+    repo: 'noelrubio143/v2',
+    file: 'configs.txt',
+    token_set: false,
+    selected_config: ''
+  };
+  localStorage.removeItem('appsConfig');
+  document.getElementById('repoOwner').value = 'noelrubio143';
+  document.getElementById('repoName').value = 'v2';
+  document.getElementById('filepath').value = 'configs.txt';
+  document.getElementById('token').value = '';
+  updateAppsConfigDisplay();
+  setStatus('Apps config reset to defaults', 'ok');
+}
+
 async function loadConfigs(){
-  const repo = document.getElementById('repo').value.trim();
+  const repo = getFullRepo();
   const path = document.getElementById('filepath').value.trim();
   if(!repo || !path || !document.getElementById('token').value.trim()){
     setStatus('Kulang: token, repo, o file name.', 'err'); return;
@@ -125,7 +200,7 @@ async function loadConfigs(){
     const res = await fetch(`https://api.github.com/repos/${repo}/contents/${path}`, { headers: ghHeaders() });
     if(res.status === 404){
       configs = []; fileSha = null;
-      setStatus('File wala pa sa repo — magsimula ka na lang mag-paste, gagawa ito ng bagong file pag Save.', 'ok');
+      setStatus('File wala pa sa repo — mag-paste ka na lang, gagawa ito ng bagong file pag Save.', 'ok');
       render(); return;
     }
     if(!res.ok){
@@ -144,7 +219,7 @@ async function loadConfigs(){
 }
 
 async function saveConfigs(){
-  const repo = document.getElementById('repo').value.trim();
+  const repo = getFullRepo();
   const path = document.getElementById('filepath').value.trim();
   if(!repo || !path || !document.getElementById('token').value.trim()){
     setStatus('Kulang: token, repo, o file name.', 'err'); return;
@@ -152,7 +227,7 @@ async function saveConfigs(){
   setStatus('Saving...', '');
   try{
     const body = {
-      message: 'Update configs via Custom Xray',
+      message: 'Update configs via Custom Xray ConfigBuilder',
       content: b64EncodeUtf8(configs.join('\n'))
     };
     if(fileSha) body.sha = fileSha;
@@ -227,7 +302,15 @@ function render(editIndex){
   });
 }
 
-render();
+// Initialize on load
+window.addEventListener('load', () => {
+  const saved = localStorage.getItem('appsConfig');
+  if (saved) {
+    appsConfig = JSON.parse(saved);
+  }
+  updateAppsConfigDisplay();
+  render();
+});
 </script>
 </body>
 </html>
