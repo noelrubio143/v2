@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="tl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Custom Xray</title>
+<style>
+  :root{
+    --bg:#0f1115; --card:#171a21; --line:#262b36; --txt:#e8eaf0; --sub:#8b93a7;
+    --accent:#5b8cff; --accent2:#3ecf8e; --danger:#ff5d5d; --warn:#f5a623;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);font-family:-apple-system,Segoe UI,Roboto,sans-serif;padding:16px 14px 60px}
+  h1{font-size:20px;margin:4px 0 2px;display:flex;align-items:center;gap:8px}
+  .sub{color:var(--sub);font-size:13px;margin-bottom:16px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+  label{display:block;font-size:12px;color:var(--sub);margin-bottom:4px;margin-top:10px}
+  label:first-child{margin-top:0}
+  input,textarea{width:100%;background:#0c0e13;border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:10px;font-size:14px;font-family:inherit}
+  textarea{resize:vertical;min-height:80px;font-family:monospace;font-size:12.5px}
+  .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+  button{border:none;border-radius:8px;padding:10px 14px;font-size:13px;font-weight:600;cursor:pointer;color:#fff}
+  .btn-main{background:var(--accent);flex:1}
+  .btn-green{background:var(--accent2);color:#04150c}
+  .btn-flat{background:#232733;color:var(--txt)}
+  .btn-danger{background:var(--danger)}
+  .btn-warn{background:var(--warn);color:#221800}
+  .btn-sm{padding:6px 10px;font-size:12px;border-radius:6px}
+  #status{font-size:12.5px;margin-top:8px;color:var(--sub)}
+  #status.ok{color:var(--accent2)}
+  #status.err{color:var(--danger)}
+  .item{background:#0c0e13;border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:8px}
+  .item-top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .proto{display:inline-block;background:#1b2030;color:var(--accent);font-size:11px;padding:2px 7px;border-radius:5px;margin-right:6px;font-weight:700}
+  .label{font-size:12.5px;word-break:break-all;flex:1;color:#c7cbd6}
+  .item-actions{display:flex;gap:6px;margin-top:8px}
+  .empty{color:var(--sub);font-size:13px;text-align:center;padding:20px 0}
+  .count{font-size:12px;color:var(--sub);margin-bottom:8px}
+  .edit-area{width:100%;font-family:monospace;font-size:12px;background:#050608;border:1px solid var(--accent);border-radius:6px;padding:8px;color:var(--txt);margin-top:8px}
+  h3{font-size:14px;margin:0 0 10px;color:var(--txt)}
+</style>
+</head>
+<body>
+
+<h1>⚡ Custom Xray</h1>
+<div class="sub">Config manager — GitHub-backed spinner para sa V2ray / Xray configs</div>
+
+<div class="card">
+  <h3>1. GitHub Setup</h3>
+  <label>Personal Access Token</label>
+  <input id="token" type="password" placeholder="ghp_xxxxxxxxxxxxxxxx">
+  <label>Repo (owner/repo)</label>
+  <input id="repo" type="text" placeholder="username/my-configs">
+  <label>File name / path</label>
+  <input id="filepath" type="text" placeholder="configs.txt">
+  <div class="row">
+    <button class="btn-main" onclick="loadConfigs()">🔄 Load from GitHub</button>
+    <button class="btn-green" onclick="saveConfigs()">💾 Save to GitHub</button>
+  </div>
+  <div id="status">Wala pang loaded. Ilagay ang token, repo, at file, tapos Load.</div>
+</div>
+
+<div class="card">
+  <h3>2. Spinner (Configs)</h3>
+  <div class="count" id="count">0 configs</div>
+  <div id="list"><div class="empty">Wala pang laman.</div></div>
+</div>
+
+<div class="card">
+  <h3>3. Paste Config</h3>
+  <label>Paste dito (1 config per line — vmess/vless/trojan/ss)</label>
+  <textarea id="pasteBox" placeholder="vless://...&#10;vmess://...&#10;trojan://..."></textarea>
+  <div class="row">
+    <button class="btn-main" onclick="addFromPaste()">➕ Idagdag sa Spinner</button>
+    <button class="btn-flat" onclick="document.getElementById('pasteBox').value=''">Clear</button>
+  </div>
+</div>
+
+<script>
+let configs = [];   // array of strings
+let fileSha = null;
+
+function setStatus(msg, type){
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.className = type || '';
+}
+
+function getProto(cfg){
+  const m = cfg.match(/^([a-z0-9]+):\/\//i);
+  return m ? m[1].toUpperCase() : '???';
+}
+
+function shortLabel(cfg){
+  try{
+    const hash = cfg.split('#')[1];
+    if(hash) return decodeURIComponent(hash);
+  }catch(e){}
+  return cfg.length > 60 ? cfg.slice(0,60)+'…' : cfg;
+}
+
+function b64EncodeUtf8(str){
+  return btoa(unescape(encodeURIComponent(str)));
+}
+function b64DecodeUtf8(str){
+  return decodeURIComponent(escape(atob(str.replace(/\n/g,''))));
+}
+
+function ghHeaders(){
+  const token = document.getElementById('token').value.trim();
+  return {
+    'Authorization': 'token ' + token,
+    'Accept': 'application/vnd.github+json'
+  };
+}
+
+async function loadConfigs(){
+  const repo = document.getElementById('repo').value.trim();
+  const path = document.getElementById('filepath').value.trim();
+  if(!repo || !path || !document.getElementById('token').value.trim()){
+    setStatus('Kulang: token, repo, o file name.', 'err'); return;
+  }
+  setStatus('Loading...', '');
+  try{
+    const res = await fetch(`https://api.github.com/repos/${repo}/contents/${path}`, { headers: ghHeaders() });
+    if(res.status === 404){
+      configs = []; fileSha = null;
+      setStatus('File wala pa sa repo — magsimula ka na lang mag-paste, gagawa ito ng bagong file pag Save.', 'ok');
+      render(); return;
+    }
+    if(!res.ok){
+      const t = await res.text();
+      setStatus('Error: ' + res.status + ' ' + t.slice(0,150), 'err'); return;
+    }
+    const data = await res.json();
+    fileSha = data.sha;
+    const content = b64DecodeUtf8(data.content);
+    configs = content.split('\n').map(l=>l.trim()).filter(Boolean);
+    setStatus(`Loaded ${configs.length} configs mula sa ${repo}/${path}`, 'ok');
+    render();
+  }catch(e){
+    setStatus('Network/CORS error: ' + e.message, 'err');
+  }
+}
+
+async function saveConfigs(){
+  const repo = document.getElementById('repo').value.trim();
+  const path = document.getElementById('filepath').value.trim();
+  if(!repo || !path || !document.getElementById('token').value.trim()){
+    setStatus('Kulang: token, repo, o file name.', 'err'); return;
+  }
+  setStatus('Saving...', '');
+  try{
+    const body = {
+      message: 'Update configs via Custom Xray',
+      content: b64EncodeUtf8(configs.join('\n'))
+    };
+    if(fileSha) body.sha = fileSha;
+    const res = await fetch(`https://api.github.com/repos/${repo}/contents/${path}`, {
+      method: 'PUT', headers: {...ghHeaders(), 'Content-Type':'application/json'},
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if(!res.ok){
+      setStatus('Save error: ' + res.status + ' ' + (data.message||''), 'err'); return;
+    }
+    fileSha = data.content.sha;
+    setStatus(`Na-save! (${configs.length} configs)`, 'ok');
+  }catch(e){
+    setStatus('Network/CORS error: ' + e.message, 'err');
+  }
+}
+
+function addFromPaste(){
+  const box = document.getElementById('pasteBox');
+  const lines = box.value.split('\n').map(l=>l.trim()).filter(Boolean);
+  if(lines.length === 0) return;
+  configs.push(...lines);
+  box.value = '';
+  render();
+  setStatus(`Nadagdag ${lines.length} config(s). I-Save para mapunta sa GitHub.`, 'ok');
+}
+
+function deleteConfig(i){
+  configs.splice(i,1);
+  render();
+}
+
+function editConfig(i){
+  render(i);
+}
+
+function saveEdit(i, val){
+  configs[i] = val.trim();
+  render();
+}
+
+function render(editIndex){
+  const list = document.getElementById('list');
+  document.getElementById('count').textContent = configs.length + ' config' + (configs.length===1?'':'s');
+  if(configs.length === 0){
+    list.innerHTML = '<div class="empty">Wala pang laman.</div>';
+    return;
+  }
+  list.innerHTML = '';
+  configs.forEach((cfg, i)=>{
+    const div = document.createElement('div');
+    div.className = 'item';
+    if(editIndex === i){
+      div.innerHTML = `
+        <textarea class="edit-area" id="ea${i}">${cfg}</textarea>
+        <div class="item-actions">
+          <button class="btn-green btn-sm" onclick="saveEdit(${i}, document.getElementById('ea${i}').value)">Save</button>
+          <button class="btn-flat btn-sm" onclick="render()">Cancel</button>
+        </div>`;
+    } else {
+      div.innerHTML = `
+        <div class="item-top">
+          <div class="label"><span class="proto">${getProto(cfg)}</span>${shortLabel(cfg)}</div>
+        </div>
+        <div class="item-actions">
+          <button class="btn-warn btn-sm" onclick="editConfig(${i})">✏️ Edit</button>
+          <button class="btn-danger btn-sm" onclick="deleteConfig(${i})">🗑️ Delete</button>
+        </div>`;
+    }
+    list.appendChild(div);
+  });
+}
+
+render();
+</script>
+</body>
+</html>
